@@ -7,7 +7,7 @@ import pandas as pd
 from dateutil import parser
 import numpy as np 
 import talib
-
+import math
 
 
 PASSWORD = "M_aku17@65"
@@ -18,6 +18,7 @@ TAKE_PROFIT_FACTOR = 4
 total_profit = 0
 profitable_transactions = 0
 transactions = 0
+account_size = 10000
 tickers = []
 
 
@@ -54,11 +55,13 @@ def get_nasdaq_tickers():
     nasdaq_table = tables[4]
     return nasdaq_table['Ticker'].tolist()
 
-def generate_buy_signal(tickers, start, end):
+def generate_buy_signal(tickers, start, end, active_signals):
     count = 0
     buy_singals_list = []
 
     for symbol in tickers: 
+        if symbol in active_signals:
+            continue 
 
         ticker = yf.Ticker(str(symbol))
         history = ticker.history(interval='1d', start= start, end= end)
@@ -90,6 +93,9 @@ def generate_buy_signal(tickers, start, end):
             buy_signal['date'] = history['Date'].iloc[length]
             #buy_signal['no_stocks'] = math.ceil(POSITION_SIZE/todays_close)
             buy_signal['risk'] = risk
+            max_risk = 200
+            no_stocks = math.floor(max_risk/(risk*todays_close)) 
+            buy_signal['no_stocks'] = no_stocks
             #buy_signal['no_stocks'] = API.calc_position_size(risk, todays_close)
 
 
@@ -109,22 +115,30 @@ def calc_trailing_SL(time_series, opening_price, opening_SL):
     for i in  time_series:
         print("I", i)
         if i > previous_price:
-            SL = SL + (i - opening_price)
+            SL = SL + (i - previous_price)
             print("SL", SL)
             previous_price = i 
     return SL
 
-def track_profit(tickers, start_day, end_day):
+def track_profit(tickers, start_day, end_day, active):
+    print("CHUJ")
     profit_per_position = {}
     global total_profit, transactions, profitable_transactions
 
-    no_buy_singals, open_positions = generate_buy_signal(tickers, start_day, end_day)
+
+    no_buy_singals, open_positions = generate_buy_signal(tickers, start_day, end_day, active)
     print("Day", end_day, "No_buy_singals", no_buy_singals)
+    print("Active signals", active)
 
     for position in open_positions:
+        
+        active.append(position['ticker'])
+
         print("Position", position)
 
+
         ticker = yf.Ticker(str(position['ticker']))
+        opening_stop_loss = position['stop_loss']
         old_end_day = end_day
         end_day = end_day + timedelta(60)
 
@@ -134,16 +148,20 @@ def track_profit(tickers, start_day, end_day):
             continue
 
         for index, close_price in enumerate(position_history['Close']):
-             
+            
             if close_price < position['stop_loss']:
                 profit_per_position[position['ticker']] = (position['stop_loss'] - position['opening_price']) * position['no_stocks']
+                print("Closed with SL")
+                active.remove(position['ticker'])
                 break
             elif close_price > position['take_profit']:
-                profit_per_position[position['ticker']] = (position['opening_price'] - position['take_profit']) * position['no_stocks']
+                profit_per_position[position['ticker']] = (position['take_profit'] - position['opening_price']) * position['no_stocks']
+                print("Closed with TP")
+                active.remove(position['ticker'])
                 break
             else: 
                 profit_per_position[position['ticker']] = (close_price - position['opening_price']) * position['no_stocks']
-                position['stop_loss'] = calc_trailing_SL(position_history['Close'].iloc[0:index], position['opening_price'], position['stop_loss'])
+                position['stop_loss'] = calc_trailing_SL(position_history['Close'].iloc[0:index], position['opening_price'], opening_stop_loss)
 
 
         if profit_per_position[position['ticker']] > 0:
@@ -157,7 +175,7 @@ def track_profit(tickers, start_day, end_day):
         total_profit = total_profit + profit_per_position[ticker]
 
     print("Total profit", total_profit)
-    print("Efficiency", profitable_transactions/transactions)
+    if transactions != 0: print("Efficiency", profitable_transactions/transactions)
 
     return profit_per_position
 
@@ -193,39 +211,49 @@ tickers = get_nasdaq_tickers()
 # history = calc_MACD(history)
 # print(history)
 # plot_MACD(history)
-
-API = XTB(ID, PASSWORD)
-
+############### Testing 
+start = datetime(2022,1,1)
 active_signals = []
-res = API.get_trades()
-for i in res: 
-    active_signals.append(i['symbol'])
 
-unique_symbols = set(active_signals)
-for symbol in unique_symbols:
-    API.check_take_profit(symbol)
-
-today = datetime.now()
-start_day = today - timedelta(40)
-no_buy_singals, open_positions = generate_buy_signal(tickers, start_day, today)
-
-print("Day", today, "No_buy_singals", no_buy_singals)
+for i in range(90,100):
+    end_day = start + timedelta(i)
+    track_profit(tickers, start, end_day, active_signals)
 
 
+########## how it should work 
 
-for position in open_positions:
-    print(position)
-    symbol = position['ticker'] + ".US_9"
+# API = XTB(ID, PASSWORD)
 
-    volume = API.calc_position_size(position['risk'], position['opening_price'])
-    API.open_pkc(symbol, volume, comment=str(round(position['take_profit'],2)))
-    API.set_stop_loss(symbol, position['no_stocks'], round(position['stop_loss'],2))
+# active_signals = []
+# res = API.get_trades()
+# for i in res: 
+#     active_signals.append(i['symbol'])
+
+# unique_symbols = set(active_signals)
+# for symbol in unique_symbols:
+#     API.check_take_profit(symbol)
+
+# today = datetime.now()
+# start_day = today - timedelta(40)
+# no_buy_singals, open_positions = generate_buy_signal(tickers, start_day, today)
+
+# print("Day", today, "No_buy_singals", no_buy_singals)
 
 
-# result = API.get_candles(ticker, period, start)
 
-# df = candles_clean(result, 100000)
-# print(df)
-# plot_candles(df)
+# for position in open_positions:
+#     print(position)
+#     symbol = position['ticker'] + ".US_9"
 
-API.logout()
+#     volume = API.calc_position_size(position['risk'], position['opening_price'])
+#     API.open_pkc(symbol, volume, comment=str(round(position['take_profit'],2)))
+#     API.set_stop_loss(symbol, position['no_stocks'], round(position['stop_loss'],2))
+
+
+# # result = API.get_candles(ticker, period, start)
+
+# # df = candles_clean(result, 100000)
+# # print(df)
+# # plot_candles(df)
+
+# API.logout()
