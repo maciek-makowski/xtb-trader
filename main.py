@@ -1,10 +1,12 @@
 from connection_login import XTB
-from data_cleanup_plotting import plot_donchain, candles_clean
+from data_cleanup_plotting import plot_donchain, candles_clean, plot_candles, plot_imp_areas, plot_MACD
 import json 
 from datetime import datetime, timedelta
 import yfinance as yf 
 import pandas as pd
 from dateutil import parser
+import numpy as np 
+import talib
 
 
 
@@ -24,6 +26,20 @@ def calc_donchain(data):
     data['upper'] = temp['High'].rolling(window = 20).max()
     data['lower'] = temp['Low'].rolling(window = 10).min()
     
+    return data
+def find_possible_sup_res(data: pd.DataFrame, window_size = 2, deviation = 0.025):
+    data['rolling_mean'] = data['Close'].rolling(window = window_size).mean()
+    data['lower'] = data['rolling_mean']  * (1 - deviation)
+    data['upper'] = data['rolling_mean']  * (1 + deviation)
+
+    data['important_area'] = np.where((data['Low'] < data['lower']) | (data['High'] > data['upper']), data['Close'], np.nan)
+    
+    return data 
+
+
+
+def calc_MACD(data: pd.DataFrame):
+    data['MACD'], data['signal'], data['profile'] = talib.MACD(data['Close'])
     return data
 
 def get_sp500_tickers():
@@ -165,15 +181,18 @@ def modify_stop_losses(xtb):
 
 
 tickers = get_nasdaq_tickers()
-#tickers.extend(get_sp500_tickers())
-# for i in range(60,70):
-#     end_day = start_day + timedelta(i)
-#     track_profit(tickers, start_day, end_day)
 
 
-#tickers = [tick + ".US_9" for tick in tickers]
+# ticker = yf.Ticker(str('^GSPC'))
+# start = datetime(2022,1,1)
+# end = datetime.now()
+# history = ticker.history(interval='1d', start= start, end= end).reset_index()
 
-# PERIOD_D1	  1440	        1440 minutes (1 day)
+# print(history)
+
+# history = calc_MACD(history)
+# print(history)
+# plot_MACD(history)
 
 API = XTB(ID, PASSWORD)
 
@@ -191,6 +210,8 @@ start_day = today - timedelta(40)
 no_buy_singals, open_positions = generate_buy_signal(tickers, start_day, today)
 
 print("Day", today, "No_buy_singals", no_buy_singals)
+
+
 
 for position in open_positions:
     print(position)
