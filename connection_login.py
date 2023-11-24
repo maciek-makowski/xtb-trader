@@ -302,18 +302,20 @@ class XTB:
 
         return result
         
-        pass
 
-    def check_take_profit(self, ticker):
-        trades = self.get_trades()
+    def check_take_profit(self, ticker, trades, SL_func):
         take_profit = 0
         sl_order = 0
+        last_stop_loss = 0
+        new_stop_loss = 0 
         ret = ""
         for trade in trades: 
             if trade['cmd'] == 5 and trade['symbol'] == ticker:
                 sl_order = trade['order2']
+                last_stop_loss = trade['open_price']
 
-            if trade['cmd'] == 0 and trade['symbol'] == ticker:
+            if trade['cmd'] == 0 and trade['symbol'] == ticker:        
+                ## Closing position
                 if len(trade['comment']) != 0: 
                     print("TP ", trade['comment'])
                     take_profit = float(trade['comment'])
@@ -321,6 +323,11 @@ class XTB:
 
                         self.close_pkc(trade['position'], trade['symbol'], sl_order, trade['volume'])
                         ret = "position closed"
+                ## Modifying stop loss 
+                if ret == "":
+                    new_stop_loss = SL_func(last_stop_loss, trade['close_price'], trade['open_price'])
+                    self.modify_stop_loss(trade['symbol'], sl_order, new_stop_loss)
+                    ret = f"stop loss modified to: {new_stop_loss}"
 
         return ret
 
@@ -349,16 +356,16 @@ class XTB:
         result = json.loads(result)
         
 
-        return result['returnData']['balance'], result['returnData']['margin_free']
+        return result['returnData']['equity'], result['returnData']['margin_free']
 
     
-    def calc_position_size(self, risk, stock_price):
-        total_capital, free = self.get_balance()
+    def calc_position_size(self, risk, stock_price, total_capital, free):
+        if free < 0: free = 0
         
         total_usd_risk = total_capital * 0.02 # risk max 2% of capital for transaction
         risk_per_stock = stock_price * risk 
         no_stocks = math.ceil (total_usd_risk / risk_per_stock)
-
+    
         if no_stocks * stock_price > free: 
             no_stocks = math.floor(free / stock_price)
 

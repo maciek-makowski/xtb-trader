@@ -8,17 +8,18 @@ from dateutil import parser
 import numpy as np 
 import talib
 import math
+import time
 
 
 PASSWORD = "M_aku17@65"
 ID = "15397197"
-RISK_PER_BUY = 0.07
-TAKE_PROFIT_FACTOR = 4
+RISK_PER_BUY = 0.1
+TAKE_PROFIT_FACTOR = 3
 
 total_profit = 0
 profitable_transactions = 0
 transactions = 0
-account_size = 10000
+#account_size = 10000
 tickers = []
 
 
@@ -58,8 +59,13 @@ def get_nasdaq_tickers():
 def generate_buy_signal(tickers, start, end, active_signals):
     count = 0
     buy_singals_list = []
-
+    active_signals = list(active_signals)
+    for index, x in enumerate(active_signals): 
+        active_signals[index] = x.replace(".US_9","")
+        
+    print("Active signals",active_signals)
     for symbol in tickers: 
+
         if symbol in active_signals:
             continue 
 
@@ -98,30 +104,57 @@ def generate_buy_signal(tickers, start, end, active_signals):
             buy_signal['no_stocks'] = no_stocks
             #buy_signal['no_stocks'] = API.calc_position_size(risk, todays_close)
 
-
             buy_singals_list.append(buy_signal)
+            
+            count = count + 1
 
 
             #print("Difference", todays_close - donchain_close)
             #print(buy_singal)
-            count = count + 1
+            
             
     return count, buy_singals_list
 
+def calc_SL_new3(last_SL, last_price, opening_price):
+    SL = last_SL
+    if last_price > 1.025 * opening_price:
+        if last_SL < opening_price:
+            SL = 1.001 * opening_price
+
+            return SL 
+
+        growth = (last_price / opening_price) - 1
+
+        increment = math.ceil((growth / 0.025) - 1) 
+        new_SL = SL + (0.025 * increment * opening_price)
+
+        if new_SL > last_SL:
+            SL = new_SL
+
+    return SL             
+   
 def calc_trailing_SL(time_series, opening_price, opening_SL):
     SL = opening_SL
     previous_price = opening_price
-    print("Opening price: ", opening_price)
+    #print("Opening price: ", opening_price)
+    ############## 1
+    # for i in  time_series:
+    #     #print("I", i)
+    #     if i > previous_price:
+    #         SL = SL + (i - previous_price)
+    #         #print("SL", SL)
+    #         previous_price = i 
+    ############### 2
     for i in  time_series:
-        print("I", i)
-        if i > previous_price:
-            SL = SL + (i - previous_price)
-            print("SL", SL)
-            previous_price = i 
+        #print("I", i)
+        if i > 1.025 * previous_price:
+            SL = previous_price
+            #print("SL", SL)
+            previous_price = i
+
     return SL
 
 def track_profit(tickers, start_day, end_day, active):
-    print("CHUJ")
     profit_per_position = {}
     global total_profit, transactions, profitable_transactions
 
@@ -140,7 +173,7 @@ def track_profit(tickers, start_day, end_day, active):
         ticker = yf.Ticker(str(position['ticker']))
         opening_stop_loss = position['stop_loss']
         old_end_day = end_day
-        end_day = end_day + timedelta(60)
+        end_day = end_day + timedelta(240)
 
         position_history = ticker.history(interval='1d', start= old_end_day, end= end_day)
 
@@ -148,21 +181,19 @@ def track_profit(tickers, start_day, end_day, active):
             continue
 
         for index, close_price in enumerate(position_history['Close']):
-            
-            if close_price < position['stop_loss']:
+            #position_history['Low'].iloc[index]
+            if  position_history['Low'].iloc[index] < position['stop_loss']:
                 profit_per_position[position['ticker']] = (position['stop_loss'] - position['opening_price']) * position['no_stocks']
                 print("Closed with SL")
-                active.remove(position['ticker'])
                 break
             elif close_price > position['take_profit']:
                 profit_per_position[position['ticker']] = (position['take_profit'] - position['opening_price']) * position['no_stocks']
                 print("Closed with TP")
-                active.remove(position['ticker'])
                 break
             else: 
                 profit_per_position[position['ticker']] = (close_price - position['opening_price']) * position['no_stocks']
-                position['stop_loss'] = calc_trailing_SL(position_history['Close'].iloc[0:index], position['opening_price'], opening_stop_loss)
-
+                #position['stop_loss'] = calc_trailing_SL(position_history['Close'].iloc[0:index], position['opening_price'], opening_stop_loss)
+                position['stop_loss'] = calc_SL_new3(position['stop_loss'], position_history['Close'].iloc[index], position['opening_price'])
 
         if profit_per_position[position['ticker']] > 0:
             profitable_transactions = profitable_transactions + 1
@@ -176,8 +207,9 @@ def track_profit(tickers, start_day, end_day, active):
 
     print("Total profit", total_profit)
     if transactions != 0: print("Efficiency", profitable_transactions/transactions)
+    print("Total transactions", transactions)
 
-    return profit_per_position
+    return active
 
 
 def modify_stop_losses(xtb):
@@ -185,7 +217,7 @@ def modify_stop_losses(xtb):
     trades = xtb.get_trades()
     for trade in trades: 
         if trade['cmd'] == 5: 
-            old_stop_loss = trade['open_price']
+            old_stop_loss = trade['open_price'] ### Mistake you're passing the already modified sl it ll end up higher than the ask price
         if trade['cmd'] == 0:
             date_object = parser.parse(trade['open_timeString'])
             candles = xtb.get_candles(trade['symbol'], 1440, date_object)
@@ -212,48 +244,45 @@ tickers = get_nasdaq_tickers()
 # print(history)
 # plot_MACD(history)
 ############### Testing 
-start = datetime(2022,1,1)
-active_signals = []
+# start = datetime(2022,1,1)
+# active_signals = []
 
-for i in range(90,100):
-    end_day = start + timedelta(i)
-    track_profit(tickers, start, end_day, active_signals)
+# for i in range(90,270):
+#     end_day = start + timedelta(i)
+#     active_signals = track_profit(tickers, start, end_day, active_signals)
 
 
 ########## how it should work 
 
-# API = XTB(ID, PASSWORD)
+API = XTB(ID, PASSWORD)
 
-# active_signals = []
-# res = API.get_trades()
-# for i in res: 
-#     active_signals.append(i['symbol'])
+active_signals = []
+trades = API.get_trades()
 
-# unique_symbols = set(active_signals)
-# for symbol in unique_symbols:
-#     API.check_take_profit(symbol)
+for i in trades: 
+    active_signals.append(i['symbol'])
 
-# today = datetime.now()
-# start_day = today - timedelta(40)
-# no_buy_singals, open_positions = generate_buy_signal(tickers, start_day, today)
+unique_symbols = set(active_signals)
+for symbol in unique_symbols:
+    API.check_take_profit(symbol, trades, calc_SL_new3)
 
-# print("Day", today, "No_buy_singals", no_buy_singals)
+today = datetime.now()
+start_day = today - timedelta(40)
+no_buy_singals, open_positions = generate_buy_signal(tickers, start_day, today, unique_symbols)
 
-
-
-# for position in open_positions:
-#     print(position)
-#     symbol = position['ticker'] + ".US_9"
-
-#     volume = API.calc_position_size(position['risk'], position['opening_price'])
-#     API.open_pkc(symbol, volume, comment=str(round(position['take_profit'],2)))
-#     API.set_stop_loss(symbol, position['no_stocks'], round(position['stop_loss'],2))
+print("Day", today, "No_buy_singals", no_buy_singals)
 
 
-# # result = API.get_candles(ticker, period, start)
+for position in open_positions:
+    print(position)
+    symbol = position['ticker'] + ".US_9"
 
-# # df = candles_clean(result, 100000)
-# # print(df)
-# # plot_candles(df)
+    
+    time.sleep(0.2)
+    total_capital, free_funds = API.get_balance()
+    volume = API.calc_position_size(position['risk'], position['opening_price'], total_capital, free_funds)
+    if volume > 0 :   
+        API.open_pkc(symbol, volume, comment=str(round(position['take_profit'],2)))
+        API.set_stop_loss(symbol, position['no_stocks'], round(position['stop_loss'],2))
 
-# API.logout()
+API.logout()
