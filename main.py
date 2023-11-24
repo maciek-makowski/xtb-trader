@@ -1,12 +1,15 @@
 from connection_login import XTB
+from data_cleanup_plotting import plot_donchain, candles_clean, plot_candles, plot_imp_areas, plot_MACD
+import json 
 from datetime import datetime, timedelta
 import yfinance as yf 
 import pandas as pd
+from dateutil import parser
 import numpy as np 
 import talib
 import math
 import time
-import pybase64
+
 
 PASSWORD = "M_aku17@65"
 ID = "15397197"
@@ -209,53 +212,25 @@ def track_profit(tickers, start_day, end_day, active):
     return active
 
 
+def modify_stop_losses(xtb):
 
-def hello_pubsub(event, context):
-    pubsub_message = pybase64.b64decode(event['data']).decode('utf-8')
-    print("PB mes ", pubsub_message)
+    trades = xtb.get_trades()
+    for trade in trades: 
+        if trade['cmd'] == 5: 
+            old_stop_loss = trade['open_price'] ### Mistake you're passing the already modified sl it ll end up higher than the ask price
+        if trade['cmd'] == 0:
+            date_object = parser.parse(trade['open_timeString'])
+            candles = xtb.get_candles(trade['symbol'], 1440, date_object)
+            candles_unzipped = candles_clean(candles, 100)
+            new_stop_loss = calc_trailing_SL(candles_unzipped['Close'], trade['open_price'], old_stop_loss)
+            xtb.modify_stop_loss(trade['symbol'], trade['order2'], new_stop_loss)
 
-    tickers = get_nasdaq_tickers()
-
-    API = XTB(ID, PASSWORD)
-
-    active_signals = []
-    trades = API.get_trades()
-
-    for i in trades: 
-        active_signals.append(i['symbol'])
-
-    unique_symbols = set(active_signals)
-    for symbol in unique_symbols:
-        API.check_take_profit(symbol, trades, calc_SL_new3)
-
-    today = datetime.now()
-    start_day = today - timedelta(40)
-    no_buy_singals, open_positions = generate_buy_signal(tickers, start_day, today, unique_symbols)
-
-    print("Day", today, "No_buy_singals", no_buy_singals)
-
-
-    for position in open_positions:
-        print(position)
-        symbol = position['ticker'] + ".US_9"
-
-        
-        time.sleep(0.2)
-        total_capital, free_funds = API.get_balance()
-        volume = API.calc_position_size(position['risk'], position['opening_price'], total_capital, free_funds)
-        if volume > 0 :   
-            API.open_pkc(symbol, volume, comment=str(round(position['take_profit'],2)))
-            API.set_stop_loss(symbol, position['no_stocks'], round(position['stop_loss'],2))
-
-    API.logout()
+           
 
 
 
-if __name__ == "__main__":
-    hello_pubsub('data','context')
 
-
-
+tickers = get_nasdaq_tickers()
 
 
 # ticker = yf.Ticker(str('^GSPC'))
@@ -279,3 +254,35 @@ if __name__ == "__main__":
 
 ########## how it should work 
 
+API = XTB(ID, PASSWORD)
+
+active_signals = []
+trades = API.get_trades()
+
+for i in trades: 
+    active_signals.append(i['symbol'])
+
+unique_symbols = set(active_signals)
+for symbol in unique_symbols:
+    API.check_take_profit(symbol, trades, calc_SL_new3)
+
+today = datetime.now()
+start_day = today - timedelta(40)
+no_buy_singals, open_positions = generate_buy_signal(tickers, start_day, today, unique_symbols)
+
+print("Day", today, "No_buy_singals", no_buy_singals)
+
+
+for position in open_positions:
+    print(position)
+    symbol = position['ticker'] + ".US_9"
+
+    
+    time.sleep(0.2)
+    total_capital, free_funds = API.get_balance()
+    volume = API.calc_position_size(position['risk'], position['opening_price'], total_capital, free_funds)
+    if volume > 0 :   
+        API.open_pkc(symbol, volume, comment=str(round(position['take_profit'],2)))
+        API.set_stop_loss(symbol, position['no_stocks'], round(position['stop_loss'],2))
+
+API.logout()
