@@ -59,8 +59,6 @@ def cluster_values(data, num_clusters):
 
 def find_polar_change(df, threshold, num_clusters):
     polar_change = []
-    mean = df['Close'].mean()
-    std = df['Close'].std()
 
     for row in df['Low']:
         duration = len(df)
@@ -118,7 +116,7 @@ def track_profit(tickers, start_day, end_day, active):
     global total_profit, transactions, profitable_transactions
 
 
-    no_buy_singals, open_positions = generate_buy_signal(tickers, start_day, end_day, active)
+    no_buy_singals, open_positions = 1,2
     print("Day", end_day, "No_buy_singals", no_buy_singals)
     print("Active signals", active)
 
