@@ -1,6 +1,6 @@
 from connection_login import XTB
 from data_cleanup_plotting import plot_donchain, candles_clean, plot_candles, plot_imp_areas, plot_MACD
-import json 
+from sklearn.cluster import KMeans
 from datetime import datetime, timedelta
 import yfinance as yf 
 import pandas as pd
@@ -38,82 +38,61 @@ def find_possible_sup_res(data: pd.DataFrame, window_size = 2, deviation = 0.025
     
     return data 
 
+def cluster_values(data, num_clusters):
+    clusters = {}
+    data = np.array(data).reshape(-1,1)
+    kmeans = KMeans(num_clusters)
+    kmeans.fit(data)
+    labels = kmeans.labels_
 
+    clusters = {i: [] for i in range(num_clusters)}
+
+    for value, label in zip(data, labels):
+        clusters[label].append(value)
+
+    for i in labels:
+        clusters[i] = np.mean(clusters[i])
+
+    return clusters
+
+
+
+def find_polar_change(df, threshold, num_clusters):
+    polar_change = []
+    mean = df['Close'].mean()
+    std = df['Close'].std()
+
+    for row in df['Low']:
+        duration = len(df)
+        i = duration - 1
+
+        while i > 0:
+            if df['High'].iloc[i] < row:
+                #diff = round((row - df['High'].iloc[i])/2 , 5)
+                diff = (row - df['High'].iloc[i])/2
+                #print("Diff", diff)
+                if diff < threshold:
+                    #polar = round(row,5) + diff
+                    polar = row + diff
+                    if polar not in polar_change:
+                        polar_change.append(polar)
+            i = i - 1
+    
+    pivots = cluster_values(polar_change, num_clusters)
+    polar_change = []
+    for x in pivots:
+        polar_change.append(pivots[x])
+        
+
+    return polar_change
+
+            
+            
 
 # def calc_MACD(data: pd.DataFrame):
 #     data['MACD'], data['signal'], data['profile'] = talib.MACD(data['Close'])
 #     return data
 
-def get_sp500_tickers():
-    url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-    tables = pd.read_html(url)
-    sp500_table = tables[0]
-    return sp500_table['Symbol'].tolist()
-
-def get_nasdaq_tickers():
-    url = 'https://en.wikipedia.org/wiki/Nasdaq-100'
-    tables = pd.read_html(url)
-    nasdaq_table = tables[4]
-    return nasdaq_table['Ticker'].tolist()
-
-def generate_buy_signal(tickers, start, end, active_signals):
-    count = 0
-    buy_singals_list = []
-    active_signals = list(active_signals)
-    for index, x in enumerate(active_signals): 
-        active_signals[index] = x.replace(".US_9","")
-        
-    print("Active signals",active_signals)
-    for symbol in tickers: 
-
-        if symbol in active_signals:
-            continue 
-
-        ticker = yf.Ticker(str(symbol))
-        history = ticker.history(interval='1d', start= start, end= end)
-        
-        if history.empty:
-            #print("smth went wrong")
-            continue
-
-        history = history.iloc[:-1]
-
-        history = history.reset_index()
-        history = calc_donchain(history)
-        length = len(history['Close']) - 1
-
-        todays_close = history['Close'].iloc[length]
-        donchain_close = history['upper'].iloc[length-1]
-        stop_loss = history['lower'].iloc[length-1]
-        risk = (todays_close - stop_loss)/todays_close
-
-        #print(history)
-
-        if todays_close > donchain_close and risk < RISK_PER_BUY :
-            #print("Buy has been generated")
-            buy_signal = {}
-            buy_signal['ticker'] = symbol
-            buy_signal['opening_price'] = todays_close
-            buy_signal['stop_loss'] = stop_loss
-            buy_signal['take_profit'] = todays_close + TAKE_PROFIT_FACTOR*(todays_close - stop_loss)
-            buy_signal['date'] = history['Date'].iloc[length]
-            #buy_signal['no_stocks'] = math.ceil(POSITION_SIZE/todays_close)
-            buy_signal['risk'] = risk
-            max_risk = 200
-            no_stocks = math.floor(max_risk/(risk*todays_close)) 
-            buy_signal['no_stocks'] = no_stocks
-            #buy_signal['no_stocks'] = API.calc_position_size(risk, todays_close)
-
-            buy_singals_list.append(buy_signal)
-            
-            count = count + 1
-
-
-            #print("Difference", todays_close - donchain_close)
-            #print(buy_singal)
-            
-            
-    return count, buy_singals_list
 
 def calc_SL_new3(last_SL, last_price, opening_price):
     SL = last_SL
@@ -133,26 +112,6 @@ def calc_SL_new3(last_SL, last_price, opening_price):
 
     return SL             
    
-def calc_trailing_SL(time_series, opening_price, opening_SL):
-    SL = opening_SL
-    previous_price = opening_price
-    #print("Opening price: ", opening_price)
-    ############## 1
-    # for i in  time_series:
-    #     #print("I", i)
-    #     if i > previous_price:
-    #         SL = SL + (i - previous_price)
-    #         #print("SL", SL)
-    #         previous_price = i 
-    ############### 2
-    for i in  time_series:
-        #print("I", i)
-        if i > 1.025 * previous_price:
-            SL = previous_price
-            #print("SL", SL)
-            previous_price = i
-
-    return SL
 
 def track_profit(tickers, start_day, end_day, active):
     profit_per_position = {}
@@ -212,65 +171,22 @@ def track_profit(tickers, start_day, end_day, active):
     return active
 
 
-           
-
-
-
-
-tickers = get_nasdaq_tickers()
-
-
-# ticker = yf.Ticker(str('^GSPC'))
-# start = datetime(2022,1,1)
-# end = datetime.now()
-# history = ticker.history(interval='1d', start= start, end= end).reset_index()
-
-# print(history)
-
-# history = calc_MACD(history)
-# print(history)
-# plot_MACD(history)
-############### Testing 
-# start = datetime(2022,1,1)
-# active_signals = []
-
-# for i in range(90,270):
-#     end_day = start + timedelta(i)
-#     active_signals = track_profit(tickers, start, end_day, active_signals)
-
-
-########## how it should work 
+        
 
 API = XTB(ID, PASSWORD)
 
-active_signals = []
-trades = API.get_trades()
+hours = 0
+days = 10
 
-for i in trades: 
-    active_signals.append(i['symbol'])
+start = datetime.now() - timedelta(days, 0,0,0,0,hours)
+period = 5 #M5
 
-unique_symbols = set(active_signals)
-for symbol in unique_symbols:
-    API.check_take_profit(symbol, trades, calc_SL_new3)
-
-today = datetime.now()
-start_day = today - timedelta(40)
-no_buy_singals, open_positions = generate_buy_signal(tickers, start_day, today, unique_symbols)
-
-print("Day", today, "No_buy_singals", no_buy_singals)
-
-
-for position in open_positions:
-    print(position)
-    symbol = position['ticker'] + ".US_9"
-
-    
-    time.sleep(0.2)
-    total_capital, free_funds = API.get_balance()
-    volume = API.calc_position_size(position['risk'], position['opening_price'], total_capital, free_funds)
-    if volume > 0 :   
-        API.open_pkc(symbol, volume, comment=str(round(position['take_profit'],2)))
-        time.sleep(0.2)
-        API.set_stop_loss(symbol, position['no_stocks'], round(position['stop_loss'],2))
+candles = API.get_candles('EURUSD', period, start)
+candles = candles_clean(candles, 100000)
+#print(candles)
+polars = find_polar_change(candles, 0.000005, 8)
+print("POLARS: ", polars)
+print("Len", len(polars))
+plot_imp_areas(candles, polars)
 
 API.logout()

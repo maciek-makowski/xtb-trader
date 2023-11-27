@@ -39,7 +39,7 @@ def plot_donchain(df):
     fig.show()
 
 
-def plot_imp_areas(df):
+def plot_imp_areas(df, lines):
     shapes = []
     candlestick = go.Candlestick(x=df['Date'],
                 open=df['Open'],
@@ -47,7 +47,7 @@ def plot_imp_areas(df):
                 low=df['Low'],
                 close=df['Close'])
     
-    for i in df['important_area']:
+    for i in lines:
         if not np.isnan(i): 
             shape = {
                 'type': 'line',
