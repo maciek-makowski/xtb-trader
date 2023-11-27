@@ -9,7 +9,8 @@ class XTB:
         self.ws = 0
         self.exec_start = self.get_time()
         self.connect()
-        #self.login()
+      
+        self.login()
         self.SessionID = self.login()
 
 
@@ -60,8 +61,13 @@ class XTB:
         try:
             self.ws = websocket.create_connection("wss://ws.xtb.com/demo")
             #success
+            print("WebSocket connection successful.")
+            print(f"WebSocket object: {self.ws}")
+            print(f"WebSocket status: {self.ws.status}")
+            print(f"WebSocket sock: {self.ws.sock}")
             return True 
-        except:
+        except Exception as e:
+            print(f"WebSocket connection error: {e}")
             #error
             return False
 

@@ -4,9 +4,9 @@ import json
 from datetime import datetime, timedelta
 import yfinance as yf 
 import pandas as pd
-from dateutil import parser
+#from dateutil import parser
 import numpy as np 
-import talib
+# import talib
 import math
 import time
 
@@ -40,9 +40,9 @@ def find_possible_sup_res(data: pd.DataFrame, window_size = 2, deviation = 0.025
 
 
 
-def calc_MACD(data: pd.DataFrame):
-    data['MACD'], data['signal'], data['profile'] = talib.MACD(data['Close'])
-    return data
+# def calc_MACD(data: pd.DataFrame):
+#     data['MACD'], data['signal'], data['profile'] = talib.MACD(data['Close'])
+#     return data
 
 def get_sp500_tickers():
     url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
@@ -212,19 +212,6 @@ def track_profit(tickers, start_day, end_day, active):
     return active
 
 
-def modify_stop_losses(xtb):
-
-    trades = xtb.get_trades()
-    for trade in trades: 
-        if trade['cmd'] == 5: 
-            old_stop_loss = trade['open_price'] ### Mistake you're passing the already modified sl it ll end up higher than the ask price
-        if trade['cmd'] == 0:
-            date_object = parser.parse(trade['open_timeString'])
-            candles = xtb.get_candles(trade['symbol'], 1440, date_object)
-            candles_unzipped = candles_clean(candles, 100)
-            new_stop_loss = calc_trailing_SL(candles_unzipped['Close'], trade['open_price'], old_stop_loss)
-            xtb.modify_stop_loss(trade['symbol'], trade['order2'], new_stop_loss)
-
            
 
 
@@ -283,6 +270,7 @@ for position in open_positions:
     volume = API.calc_position_size(position['risk'], position['opening_price'], total_capital, free_funds)
     if volume > 0 :   
         API.open_pkc(symbol, volume, comment=str(round(position['take_profit'],2)))
+        time.sleep(0.2)
         API.set_stop_loss(symbol, position['no_stocks'], round(position['stop_loss'],2))
 
 API.logout()
