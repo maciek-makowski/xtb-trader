@@ -214,63 +214,63 @@ def track_profit(tickers, start_day, end_day, active):
 
            
 
+if __name__ == "__main__":
 
 
-
-tickers = get_nasdaq_tickers()
-
-
-# ticker = yf.Ticker(str('^GSPC'))
-# start = datetime(2022,1,1)
-# end = datetime.now()
-# history = ticker.history(interval='1d', start= start, end= end).reset_index()
-
-# print(history)
-
-# history = calc_MACD(history)
-# print(history)
-# plot_MACD(history)
-############### Testing 
-# start = datetime(2022,1,1)
-# active_signals = []
-
-# for i in range(90,270):
-#     end_day = start + timedelta(i)
-#     active_signals = track_profit(tickers, start, end_day, active_signals)
+    tickers = get_nasdaq_tickers()
 
 
-########## how it should work 
+    # ticker = yf.Ticker(str('^GSPC'))
+    # start = datetime(2022,1,1)
+    # end = datetime.now()
+    # history = ticker.history(interval='1d', start= start, end= end).reset_index()
 
-API = XTB(ID, PASSWORD)
+    # print(history)
 
-active_signals = []
-trades = API.get_trades()
+    # history = calc_MACD(history)
+    # print(history)
+    # plot_MACD(history)
+    ############### Testing 
+    # start = datetime(2022,1,1)
+    # active_signals = []
 
-for i in trades: 
-    active_signals.append(i['symbol'])
-
-unique_symbols = set(active_signals)
-for symbol in unique_symbols:
-    API.check_take_profit(symbol, trades, calc_SL_new3)
-
-today = datetime.now()
-start_day = today - timedelta(40)
-no_buy_singals, open_positions = generate_buy_signal(tickers, start_day, today, unique_symbols)
-
-print("Day", today, "No_buy_singals", no_buy_singals)
+    # for i in range(90,270):
+    #     end_day = start + timedelta(i)
+    #     active_signals = track_profit(tickers, start, end_day, active_signals)
 
 
-for position in open_positions:
-    print(position)
-    symbol = position['ticker'] + ".US_9"
+    ########## how it should work 
 
-    
-    time.sleep(0.2)
-    total_capital, free_funds = API.get_balance()
-    volume = API.calc_position_size(position['risk'], position['opening_price'], total_capital, free_funds)
-    if volume > 0 :   
-        API.open_pkc(symbol, volume, comment=str(round(position['take_profit'],2)))
+    API = XTB(ID, PASSWORD)
+
+    active_signals = []
+    trades = API.get_trades()
+
+    for i in trades: 
+        active_signals.append(i['symbol'])
+
+    unique_symbols = set(active_signals)
+    for symbol in unique_symbols:
+        API.check_take_profit(symbol, trades, calc_SL_new3)
+
+    today = datetime.now()
+    start_day = today - timedelta(40)
+    no_buy_singals, open_positions = generate_buy_signal(tickers, start_day, today, unique_symbols)
+
+    print("Day", today, "No_buy_singals", no_buy_singals)
+
+
+    for position in open_positions:
+        print(position)
+        symbol = position['ticker'] + ".US_9"
+
+        
         time.sleep(0.2)
-        API.set_stop_loss(symbol, position['no_stocks'], round(position['stop_loss'],2))
+        total_capital, free_funds = API.get_balance()
+        volume = API.calc_position_size(position['risk'], position['opening_price'], total_capital, free_funds)
+        if volume > 0 :   
+            API.open_pkc(symbol, volume, comment=str(round(position['take_profit'],2)))
+            time.sleep(0.2)
+            API.set_stop_loss(symbol, position['no_stocks'], round(position['stop_loss'],2))
 
-API.logout()
+    API.logout()
