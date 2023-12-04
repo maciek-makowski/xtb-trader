@@ -23,8 +23,22 @@ def insert_into_query(table_name,ticker, date, columns, data):
 """
     return query
 
+def update_price_query(price, ticker, date):
+    query = f"""
+        UPDATE stocks_statements
+        SET price = {price}
+        WHERE ticker = {ticker} AND date = {date}
+    """
+    return query
 
-def db_execute_query(query_func, *args, **kwargs):
+def get_dates_tickers():
+    query = f"""
+            SELECT ticker, date 
+            FROM stock_statements
+    """
+    return query
+
+def db_execute_query(query_func, read_pandas = False, *args, **kwargs):
     db_name = "stocks_data"
     user = "stocks"
     password = "1234"
@@ -45,13 +59,13 @@ def db_execute_query(query_func, *args, **kwargs):
 
     # Create a table with the specified columns
     query = query_func(*args, **kwargs)
-    cur.execute(query)
-
-    result = cur.fetchall()
-    cleaned_up_result = []
-
-    for i in result: 
-        cleaned_up_result.append(i[0])
+    
+    if read_pandas == True: 
+        result = pd.read_sql_query(query, conn)
+    else:
+        print("ELSE")
+        cur.execute(query)
+        result = cur.fetchall()   
 
     # Commit the changes to the database
     conn.commit()
@@ -60,7 +74,7 @@ def db_execute_query(query_func, *args, **kwargs):
     cur.close()
     conn.close()
 
-    return cleaned_up_result
+    return result
 
 def get_table_columns():
     query = """
@@ -104,12 +118,33 @@ def pull_and_insert_to_db(tickers, db_cols):
             #print(insert_into_query("Stock_statements", tickers[0], col_name, merged_df.index, col_data))
             db_execute_query(insert_into_query, "Stock_statements", x, col_name, merged_df.index, col_data)
 
-tickers = get_sp500_tickers()
-tickers.extend(get_nasdaq_tickers())
 
-db_cols = db_execute_query(get_table_columns)
+if __name__ == "__main__":
+   
+    tickers_dates = {}
+    ticker_dates_prices = db_execute_query(get_dates_tickers, read_pandas=True)
+    print(ticker_dates_prices)
+ 
+    
+    for index, row in ticker_dates_prices.iterrows():
+        temp_ticker = yf.Ticker(row['ticker'])
+        end_date = row['date'] + timedelta(120)
+        # print(end_date - timedelta(30))
+        row['price'] = temp_ticker.history(interval='1d', start= (end_date - timedelta(30)), end= end_date)
+    print(ticker_dates_prices)  
 
-pull_and_insert_to_db(tickers, db_cols)
+        
+        
+
+    # for x in tickers: 
+    #     print("Ticker", x)
+    #     temp_ticker = yf.Ticker(x)
+
+    #     temp_ticker = 
+
+    # db_cols = db_execute_query(get_table_columns)
+
+    # pull_and_insert_to_db(tickers, db_cols)
 
 
 
