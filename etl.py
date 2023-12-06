@@ -1,5 +1,6 @@
 import yfinance as yf
 import pandas as pd 
+import numpy as np
 import math
 import psycopg2
 from datetime import datetime, timedelta
@@ -25,9 +26,9 @@ def insert_into_query(table_name,ticker, date, columns, data):
 
 def update_price_query(price, ticker, date):
     query = f"""
-        UPDATE stocks_statements
+        UPDATE stock_statements
         SET price = {price}
-        WHERE ticker = {ticker} AND date = {date}
+        WHERE ticker = '{ticker}' AND date = '{date}';
     """
     return query
 
@@ -38,7 +39,7 @@ def get_dates_tickers():
     """
     return query
 
-def db_execute_query(query_func, read_pandas = False, *args, **kwargs):
+def db_execute_query(query_func, *args, read = False, read_pandas = False):
     db_name = "stocks_data"
     user = "stocks"
     password = "1234"
@@ -58,14 +59,17 @@ def db_execute_query(query_func, read_pandas = False, *args, **kwargs):
     cur = conn.cursor()
 
     # Create a table with the specified columns
-    query = query_func(*args, **kwargs)
-    
-    if read_pandas == True: 
-        result = pd.read_sql_query(query, conn)
-    else:
-        print("ELSE")
-        cur.execute(query)
-        result = cur.fetchall()   
+    query = query_func(*args)
+
+    if read == True: 
+        if read_pandas == True: 
+            result = pd.read_sql_query(query, conn)
+        else:
+            cur.execute(query)
+            result = cur.fetchall()  
+    else : 
+        cur.execute(query) 
+        result = "Write query"
 
     # Commit the changes to the database
     conn.commit()
@@ -87,7 +91,9 @@ def get_table_columns():
 
 def pull_and_insert_to_db(tickers, db_cols):
     #indexes_to_drop = ["RentExpenseSupplemental", "DilutedAverageShares", "DilutedEPS", "DilutedNIAvailtoComStockholders", "RentAndLandingFees", "OtherIncomeExpense", "RestructuringAndMergernAcquisition", "DepreciationAmortizationDepletionIncomeStatement", "Amortization", "AmortizationOfIntangiblesIncomeStatement"] 
-
+    
+    to_del = [0,1,2]
+    db_cols = np.delete(db_cols, to_del)
 
     for x in tickers: 
         print("Ticker", x)
@@ -97,18 +103,24 @@ def pull_and_insert_to_db(tickers, db_cols):
         result_1 = temp_ticker.get_balance_sheet().T
         result_2 = temp_ticker.get_cash_flow().T
 
-
         merged_df = pd.merge(result, result_1, left_index=True, right_index=True, how='left')
         merged_df = pd.merge(merged_df, result_2, left_index=True, right_index=True, how='left').T
         #merged_df = merged_df.drop(indexes_to_drop)
+        merged_df.index = merged_df.index.str.lower()
+
         for index in merged_df.index:
             if index.lower() not in db_cols: 
                 merged_df = merged_df.drop(index)
+            
+        for db_col in db_cols: 
+            if db_col not in merged_df.index: 
+                for col in merged_df:
+                    merged_df[col][db_col] = 0
 
         for col_name in merged_df:
             merged_df = merged_df.rename(columns={col_name:col_name.strftime("%Y-%m-%d")})
         
-        #print(merged_df)
+        #print("MDF ", merged_df)
 
         for col_name, col_data in merged_df.items():
             for index, data in enumerate(col_data):
@@ -118,33 +130,62 @@ def pull_and_insert_to_db(tickers, db_cols):
             #print(insert_into_query("Stock_statements", tickers[0], col_name, merged_df.index, col_data))
             db_execute_query(insert_into_query, "Stock_statements", x, col_name, merged_df.index, col_data)
 
+def calc_trading_day(start_day: datetime, period):
+    end_day = start_day + timedelta(period)
+    if end_day > datetime.now().date():
+        return datetime.today()
+    if 1 <= end_day.weekday() <= 4:
+        return end_day 
+    else: 
+        while not 1<= end_day.weekday() <= 4:
+            end_day = end_day + timedelta(1)
+    return end_day 
+    
+
 
 if __name__ == "__main__":
    
     tickers_dates = {}
-    ticker_dates_prices = db_execute_query(get_dates_tickers, read_pandas=True)
+    ticker_dates_prices = db_execute_query(get_dates_tickers,read = True, read_pandas=True)
+    prices = []
     print(ticker_dates_prices)
- 
     
     for index, row in ticker_dates_prices.iterrows():
         temp_ticker = yf.Ticker(row['ticker'])
-        end_date = row['date'] + timedelta(120)
-        # print(end_date - timedelta(30))
-        row['price'] = temp_ticker.history(interval='1d', start= (end_date - timedelta(30)), end= end_date)
+        period = 90
+        end_date = calc_trading_day(row['date'], period)
+        price = temp_ticker.history(interval='1d', start= (end_date - timedelta(1)), end= end_date)
+        while price.empty:
+            print("If entered")
+            period = period + 1
+            end_date = calc_trading_day(row['date'], period)
+
+            print("End date", end_date)
+
+            my_datetime = datetime.combine(end_date, datetime.min.time())
+        
+            price = temp_ticker.history(interval='1d', start= (end_date - timedelta(1)), end= end_date)
+
+        prices.append(price['Close'].iloc[0])
+
+    ticker_dates_prices = ticker_dates_prices.assign(new_col = prices)
+    ticker_dates_prices = ticker_dates_prices.rename(columns={"new_col":"price"})
+
     print(ticker_dates_prices)  
 
+    for _, row in ticker_dates_prices.iterrows():
+        print("Price", row['price'], "Ticker", row['ticker'], "Date", row['date'])
+        db_execute_query(update_price_query, row['price'], row['ticker'], row['date'])
+
         
-        
+ 
+    ############ UPLOADING ALL OF THE RECORDS TO THE DB ##########################################################   
+    # tickers = get_sp500_tickers()
 
-    # for x in tickers: 
-    #     print("Ticker", x)
-    #     temp_ticker = yf.Ticker(x)
+    # db_cols = db_execute_query(get_table_columns, read = True, read_pandas = True)
+    
 
-    #     temp_ticker = 
-
-    # db_cols = db_execute_query(get_table_columns)
-
-    # pull_and_insert_to_db(tickers, db_cols)
+    # pull_and_insert_to_db(tickers, db_cols['column_name'].values)
 
 
 
