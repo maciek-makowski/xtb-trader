@@ -309,6 +309,7 @@ class XTB:
         last_stop_loss = 0
         new_stop_loss = 0 
         ret = ""
+
         for trade in trades: 
             if trade['cmd'] == 5 and trade['symbol'] == ticker:
                 sl_order = trade['order2']
@@ -316,16 +317,18 @@ class XTB:
 
             if trade['cmd'] == 0 and trade['symbol'] == ticker:        
                 ## Closing position
-                if len(trade['comment']) != 0: 
-                    print("TP ", trade['comment'])
-                    take_profit = float(trade['comment'])
-                    if trade['close_price'] >= take_profit:
+                trade_info = self.get_trade_info(trade['order'])
+                current_price = trade_info['returnData'][0]['close_price']
+                if len(trade['customComment']) != 0: 
+                    print("TP ", trade['customComment'])
+                    take_profit = float(trade['customComment'])
+                    if current_price >= take_profit:
 
                         self.close_pkc(trade['position'], trade['symbol'], sl_order, trade['volume'])
                         ret = "position closed"
                 ## Modifying stop loss 
                 if ret == "":
-                    new_stop_loss = SL_func(last_stop_loss, trade['close_price'], trade['open_price'])
+                    new_stop_loss = SL_func(last_stop_loss, current_price, trade['open_price'])
                     self.modify_stop_loss(trade['symbol'], sl_order, new_stop_loss)
                     ret = f"stop loss modified to: {new_stop_loss}"
 
