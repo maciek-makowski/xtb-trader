@@ -346,6 +346,21 @@ class XTB:
 
         return result
     
+    def get_trade_info(self, trade_orders):
+        message = {
+            "command": "getTradeRecords",
+            "arguments": {
+                "orders": trade_orders
+        }
+        }
+        get_info = json.dumps(message)
+        result = self.send(get_info)
+        result = json.loads(result)
+
+        return result
+
+        
+    
     def get_balance(self):
         command = {
 	        "command": "getMarginLevel"
